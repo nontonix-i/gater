@@ -1,7 +1,7 @@
 # Binaries
 cmd/server/server
 cmd/seed/seed
-server
+/server
 
 # Temp
 /tmp/
@@ -10,6 +10,9 @@ server
 # OS
 .DS_Store
 Thumbs.db
+
+# Environment
+.env
 
 # Web
 web/node_modules/

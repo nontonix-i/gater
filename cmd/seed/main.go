@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -25,7 +26,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	apiKey := "gater-key-001"
+	apiKey := os.Getenv("SEED_API_KEY")
+	if apiKey == "" {
+		apiKey = "gater-key-001"
+	}
+
 	var user model.User
 	err = db.Where("api_key = ?", apiKey).First(&user).Error
 	if err != nil {
@@ -40,39 +45,50 @@ func main() {
 		fmt.Println("User exists:", user.ID)
 	}
 
-	creds := []struct {
-		provider string
-		data     map[string]string
-	}{
-		{"gofile", map[string]string{"token": "SWXawrVlfs3ELuzASM2zVCb6X26OSaSk"}},
-		{"streamtape", map[string]string{"login": "31fb29c839b2821b199f", "key": "O6DPvpxWP1CZ36e"}},
-		{"turboviplay", map[string]string{"api_key": "bnhrC5bsr8"}},
-		{"rapidgator", map[string]string{"username": "fiqriky@gmail.com", "password": "ciamis17"}},
-		{"rpmshare", map[string]string{"api_token": "a50fcaba0b3101798b3396db"}},
-		{"vikingfiles", map[string]string{"user": "6x4WbuoM5b"}},
-		{"doodstream", map[string]string{"api_key": "533356fpbu99umaax8vw5m"}},
-		{"abyss", map[string]string{"api_key": "c10afbc1d7e668cc43a77250d89df61f"}},
-		{"lulustream", map[string]string{"api_key": "290956gu7mbuaqmkq1to25"}},
-		{"seekstreaming", map[string]string{"api_token": "4731ad2d882f3500d73134b3"}},
-		{"vidoza", map[string]string{"api_token": "rydpztpiovbdgt7571kyezq5kxpti6p8agp0zokd59ark9ruio36q2fcoqhg"}},
+	providers := []string{
+		"abyss", "anonmp4", "doodstream", "gofile", "lulustream",
+		"rapidgator", "rpmshare", "seekstreaming", "streamtape",
+		"turboviplay", "vidoza", "vikingfiles",
 	}
 
-	for _, c := range creds {
-		data, _ := json.Marshal(c.data)
+	for _, p := range providers {
+		envKey := "SEED_" + strings.ToUpper(p)
+		raw := os.Getenv(envKey)
+		if raw == "" {
+			continue
+		}
+
+		data := make(map[string]string)
+		for _, pair := range strings.Split(raw, ",") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			parts := strings.SplitN(pair, "=", 2)
+			if len(parts) == 2 {
+				data[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			}
+		}
+
+		if len(data) == 0 {
+			continue
+		}
+
+		credJSON, _ := json.Marshal(data)
 		var existing model.ProviderCredential
-		err := db.Where("user_id = ? AND provider = ?", user.ID, c.provider).First(&existing).Error
+		err := db.Where("user_id = ? AND provider = ?", user.ID, p).First(&existing).Error
 		if err == nil {
-			db.Model(&existing).Update("credentials", data)
-			fmt.Printf("Updated: %s\n", c.provider)
+			db.Model(&existing).Update("credentials", credJSON)
+			fmt.Printf("Updated: %s\n", p)
 		} else {
 			cred := &model.ProviderCredential{
 				ID:          uuid.New().String(),
 				UserID:      user.ID,
-				Provider:    c.provider,
-				Credentials: data,
+				Provider:    p,
+				Credentials: credJSON,
 			}
 			db.Create(cred)
-			fmt.Printf("Created: %s\n", c.provider)
+			fmt.Printf("Created: %s\n", p)
 		}
 	}
 

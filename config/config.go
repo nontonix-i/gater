@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,6 +40,8 @@ type KeepaliveConfig struct {
 }
 
 func Load(path string) (*Config, error) {
+	godotenv.Load()
+
 	cfg := &Config{
 		Server: ServerConfig{Port: 8080},
 		Upload: UploadConfig{

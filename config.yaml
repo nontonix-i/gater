@@ -2,7 +2,7 @@ server:
   port: 8080
 
 database:
-  dsn: "postgresql://postgres.jggvzccxqizyorpjwwrw:Ciamis01112002@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
+  dsn: ""
 
 auth:
   enabled: true
