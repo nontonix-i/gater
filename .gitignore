@@ -1,0 +1,23 @@
+# Binaries
+cmd/server/server
+cmd/seed/seed
+server
+
+# Temp
+/tmp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Web
+web/node_modules/
+web/dist/
+cmd/server/web/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

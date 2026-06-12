@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+database:
+  dsn: "postgresql://postgres.jggvzccxqizyorpjwwrw:Ciamis01112002@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
+
+auth:
+  enabled: true
+
+upload:
+  temp_dir: /tmp/gater
+  max_file_size: 754974720
+
+keepalive:
+  enabled: true
+  check_every: 1440
+  visit_older: 30
+  request_limit: 50
