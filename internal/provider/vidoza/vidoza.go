@@ -148,8 +148,14 @@ func (p *Vidoza) UploadFromURL(ctx context.Context, urlStr string, opts map[stri
 		return nil, fmt.Errorf("remote upload failed: id=%d url=%s", r.ID, r.URL)
 	}
 
+	outputURL := r.URL
+	if r.FileCode != "" {
+		outputURL = fmt.Sprintf("https://vidoza.net/%s.html", r.FileCode)
+	}
+
 	return &provider.Result{
-		OutputURL: r.URL,
+		FileCode:  r.FileCode,
+		OutputURL: outputURL,
 	}, nil
 }
 
