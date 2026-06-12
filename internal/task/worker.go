@@ -36,6 +36,10 @@ func (m *Manager) Process(taskID string, providers []string) {
 	m.finalizeTask(taskID)
 }
 
+func (m *Manager) publishResult(taskID, providerName string, ru ResultUpdate) {
+	m.Hub.PublishResult(taskID, "", ru)
+}
+
 func (m *Manager) uploadToProvider(taskID, providerName string) {
 	prov, err := m.registry.Get(providerName)
 	if err != nil {
@@ -63,6 +67,11 @@ func (m *Manager) uploadToProvider(taskID, providerName string) {
 		m.db.Model(&model.TaskResult{}).
 			Where("task_id = ? AND provider = ?", taskID, providerName).
 			Update("progress", pct)
+		m.publishResult(taskID, providerName, ResultUpdate{
+			Provider: providerName,
+			Status:   "uploading",
+			Progress: pct,
+		})
 	}
 
 	ctx = provider.WithProgress(ctx, progress)
@@ -177,17 +186,29 @@ func (m *Manager) downloadFile(ctx context.Context, sourceURL string) (string, e
 }
 
 func (m *Manager) saveResult(taskID, providerName string, result *provider.Result) {
+	now := time.Now()
 	update := map[string]interface{}{
 		"status":              "completed",
 		"output_url":          result.OutputURL,
 		"file_code":           result.FileCode,
 		"provider_file_name":  result.FileName,
 		"provider_file_size":  result.FileSize,
-		"completed_at":        time.Now(),
+		"completed_at":        now,
 	}
 	m.db.Model(&model.TaskResult{}).
 		Where("task_id = ? AND provider = ?", taskID, providerName).
 		Updates(update)
+
+	m.publishResult(taskID, providerName, ResultUpdate{
+		Provider:         providerName,
+		Status:           "completed",
+		Progress:         100,
+		OutputURL:        result.OutputURL,
+		FileCode:         result.FileCode,
+		ProviderFileName: result.FileName,
+		ProviderFileSize: result.FileSize,
+		CompletedAt:      &now,
+	})
 
 	slog.Info("upload completed", "task_id", taskID, "provider", providerName)
 }
@@ -227,6 +248,8 @@ func (m *Manager) finalizeTask(taskID string) {
 		os.Remove(task.FilePath)
 	}
 
+	m.Hub.MarkDone(taskID, status)
+
 	slog.Info("task completed", "task_id", taskID, "status", status,
 		"completed", completed, "failed", failed)
 }
@@ -240,6 +263,14 @@ func (m *Manager) updateResult(taskID, providerName, status, errMsg string) {
 			"error_message": errMsg,
 			"completed_at":  now,
 		})
+
+	m.publishResult(taskID, providerName, ResultUpdate{
+		Provider:    providerName,
+		Status:      status,
+		Progress:    0,
+		Error:       errMsg,
+		CompletedAt: &now,
+	})
 }
 
 func (m *Manager) updateResultStatus(taskID, providerName, status string) {
@@ -250,6 +281,13 @@ func (m *Manager) updateResultStatus(taskID, providerName, status string) {
 			"status":     status,
 			"started_at": now,
 		})
+
+	m.publishResult(taskID, providerName, ResultUpdate{
+		Provider:  providerName,
+		Status:    status,
+		Progress:  0,
+		StartedAt: &now,
+	})
 }
 
 func (m *Manager) getProviderOpts(userID, providerName string) map[string]string {

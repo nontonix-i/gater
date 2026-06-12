@@ -30,6 +30,7 @@ type Manager struct {
 	db       *gorm.DB
 	registry *provider.Registry
 	tempDir  string
+	Hub      *ProgressHub
 }
 
 func NewManager(db *gorm.DB, reg *provider.Registry, tempDir string) *Manager {
@@ -37,6 +38,7 @@ func NewManager(db *gorm.DB, reg *provider.Registry, tempDir string) *Manager {
 		db:       db,
 		registry: reg,
 		tempDir:  tempDir,
+		Hub:      NewProgressHub(),
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -203,67 +202,49 @@ func (h *Handler) StreamProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ch, unsub := h.taskManager.Hub.Subscribe(taskID)
+	defer unsub()
+
 	ctx := r.Context()
-	done := false
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-		}
+		case update, ok := <-ch:
+			if !ok {
+				return
+			}
 
-		var task model.Task
-		if err := h.db.Preload("Results").First(&task, "id = ?", taskID).Error; err != nil {
-			fmt.Fprintf(w, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
+			results := make([]resultResponse, 0, len(update.Results))
+			for _, r := range update.Results {
+				results = append(results, resultResponse{
+					Provider:         r.Provider,
+					Status:           r.Status,
+					Progress:         r.Progress,
+					OutputURL:        r.OutputURL,
+					FileCode:         r.FileCode,
+					ProviderFileName: r.ProviderFileName,
+					ProviderFileSize: r.ProviderFileSize,
+					Error:            r.Error,
+					StartedAt:        r.StartedAt,
+					CompletedAt:      r.CompletedAt,
+				})
+			}
+
+			resp := map[string]interface{}{
+				"id":      update.ID,
+				"status":  update.Status,
+				"results": results,
+			}
+
+			data, _ := json.Marshal(resp)
+			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
-			return
-		}
 
-		var results []resultResponse
-		allDone := true
-		for _, r := range task.Results {
-			res := resultResponse{
-				Provider:         r.Provider,
-				Status:           r.Status,
-				Progress:         r.Progress,
-				SourceURL:        r.SourceURL,
-				OutputURL:        r.OutputURL,
-				FileCode:         r.FileCode,
-				ProviderFileName: r.ProviderFileName,
-				ProviderFileSize: r.ProviderFileSize,
-				Error:            r.ErrorMessage,
-				StartedAt:        r.StartedAt,
-				CompletedAt:      r.CompletedAt,
+			if update.Done {
+				return
 			}
-			results = append(results, res)
-			if r.Status != "completed" && r.Status != "failed" {
-				allDone = false
-			}
-		}
-
-		resp := map[string]interface{}{
-			"id":       task.ID,
-			"status":   task.Status,
-			"results":  results,
-		}
-
-		data, _ := json.Marshal(resp)
-		fmt.Fprintf(w, "data: %s\n\n", data)
-		flusher.Flush()
-
-		if allDone {
-			if !done {
-				done = true
-				continue
-			}
-			return
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(1 * time.Second):
 		}
 	}
 }
