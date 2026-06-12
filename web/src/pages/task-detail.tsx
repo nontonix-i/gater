@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import * as api from "../lib/api"
+import type { ProgressEvent } from "../lib/api"
 import { Button } from "../components/ui/button"
 import { Badge } from "../components/ui/badge"
 import { Skeleton } from "../components/ui/skeleton"
@@ -31,12 +32,40 @@ export default function TaskDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [task, setTask] = useState<api.Task | null>(null)
+  const [live, setLive] = useState<ProgressEvent | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const doneRef = useRef(false)
 
   useEffect(() => {
     if (!id) return
-    api.tasks.get(id).then(setTask).finally(() => setLoading(false))
+
+    api.tasks.get(id).then((t) => {
+      setTask(t)
+      setLoading(false)
+
+      const allDone = t.results?.every(
+        (r) => r.status === "completed" || r.status === "failed"
+      )
+      if (allDone) return
+
+      const unsub = api.subscribeProgress(id, (evt) => {
+        setLive(evt)
+        if (evt.done && !doneRef.current) {
+          doneRef.current = true
+          api.tasks.get(id).then(setTask)
+        }
+      }, setError)
+
+      return unsub
+    }).catch(() => {
+      setLoading(false)
+    })
   }, [id])
+
+  const results = live?.results || task?.results || []
+  const status = live?.status || task?.status || ""
+  const displayId = live?.id || task?.id || id
 
   if (loading) {
     return (
@@ -68,21 +97,25 @@ export default function TaskDetailPage() {
           <h1 className="text-2xl font-bold tracking-tight">
             {task.title || task.file_name || "Task"}
           </h1>
-          <p className="text-sm text-muted-foreground font-mono">{task.id}</p>
+          <p className="text-sm text-muted-foreground font-mono">{displayId}</p>
         </div>
         <Badge
           variant={
-            task.status === "completed"
+            status === "completed"
               ? "default"
-              : task.status === "failed"
+              : status === "failed"
                 ? "destructive"
                 : "secondary"
           }
           className="ml-auto"
         >
-          {task.status}
+          {status}
         </Badge>
       </div>
+
+      {error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -123,20 +156,37 @@ export default function TaskDetailPage() {
 
       <div>
         <h2 className="text-lg font-semibold mb-4">
-          Provider Results ({task.results?.length || 0})
+          Provider Results ({results.length})
         </h2>
         <div className="space-y-3">
-          {task.results?.map((result) => (
-            <Card key={result.id}>
-              <CardContent className="pt-6">
-                <div className="flex items-start justify-between">
+          {results.map((result) => {
+            const isLive = live?.results?.some((r) => r.provider === result.provider)
+
+            return (
+              <Card key={result.provider}>
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3 flex-1 min-w-0">
                       {resultStatusIcon[result.status] || (
                         <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
                       )}
-                      <div className="min-w-0 space-y-1">
+                      <div className="min-w-0 space-y-1 flex-1">
                         <p className="font-medium capitalize">{result.provider}</p>
                         <Badge variant="outline">{result.status}</Badge>
+
+                        {result.status === "uploading" && (
+                          <div className="w-full max-w-xs mt-2">
+                            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-primary transition-all duration-300"
+                                style={{ width: `${result.progress}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {result.progress}%
+                            </p>
+                          </div>
+                        )}
 
                         {result.error_message && (
                           <p className="text-sm text-destructive">{result.error_message}</p>
@@ -179,15 +229,11 @@ export default function TaskDetailPage() {
                         )}
                       </div>
                     </div>
-                    {result.progress > 0 && result.progress < 100 && (
-                      <div className="text-sm text-muted-foreground shrink-0">
-                        {result.progress}%
-                      </div>
-                    )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       </div>
     </div>

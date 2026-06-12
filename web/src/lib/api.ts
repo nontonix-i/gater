@@ -229,3 +229,40 @@ export const settings = {
       method: "POST",
     }),
 }
+
+// SSE progress stream
+export interface ProgressEvent {
+  id: string
+  status: string
+  results: TaskResult[]
+  done: boolean
+}
+
+export function subscribeProgress(
+  taskId: string,
+  onEvent: (evt: ProgressEvent) => void,
+  onError?: (err: string) => void,
+): () => void {
+  const token = getToken()
+  const url = `${API_BASE}/task/${taskId}/progress${token ? `?api_key=${encodeURIComponent(token)}` : ""}`
+  const es = new EventSource(url)
+
+  es.onmessage = (msg) => {
+    try {
+      const data = JSON.parse(msg.data) as ProgressEvent
+      onEvent(data)
+      if (data.done) {
+        es.close()
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  es.onerror = () => {
+    onError?.("Connection lost")
+    es.close()
+  }
+
+  return () => es.close()
+}
