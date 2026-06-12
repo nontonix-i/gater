@@ -40,6 +40,17 @@ type remoteResp struct {
 	} `json:"response"`
 }
 
+type remoteStatusResp struct {
+	Response struct {
+		Status    string `json:"status"`
+		FileID    string `json:"file_id"`
+		FileURL   string `json:"file_url"`
+		FileName  string `json:"filename"`
+		FileSize  int64  `json:"size"`
+		Percent   int    `json:"percent"`
+	} `json:"response"`
+}
+
 const apiBase = "https://rapidgator.net/api/v2"
 
 func New() *RapidGator {
@@ -152,9 +163,71 @@ func (p *RapidGator) UploadFromURL(ctx context.Context, sourceURL string, opts m
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 
-	return &provider.Result{
-		FileCode: fmt.Sprintf("%d", r.Response.ID),
-	}, nil
+	if r.Response.ID == 0 {
+		return nil, fmt.Errorf("remote upload failed: no ID returned")
+	}
+
+	remoteID := r.Response.ID
+	statusURL := fmt.Sprintf("%s/remote/status/%d?token=%s", apiBase, remoteID, token)
+	progressFn, _ := provider.GetProgress(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		var s remoteStatusResp
+		sreq, err := http.NewRequestWithContext(ctx, "GET", statusURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create status request: %w", err)
+		}
+
+		sresp, err := p.client.Do(sreq)
+		if err != nil {
+			return nil, fmt.Errorf("status check: %w", err)
+		}
+
+		if err := json.NewDecoder(sresp.Body).Decode(&s); err != nil {
+			sresp.Body.Close()
+			return nil, fmt.Errorf("decode status: %w", err)
+		}
+		sresp.Body.Close()
+
+		switch s.Response.Status {
+		case "done":
+			url := s.Response.FileURL
+			if url == "" {
+				url = fmt.Sprintf("https://rapidgator.net/file/%s", s.Response.FileID)
+			}
+
+			if progressFn != nil {
+				progressFn(100, "completed")
+			}
+
+			return &provider.Result{
+				OutputURL: url,
+				FileCode:  s.Response.FileID,
+				FileName:  s.Response.FileName,
+				FileSize:  s.Response.FileSize,
+			}, nil
+
+		case "progress":
+			pct := s.Response.Percent
+			if pct <= 0 {
+				pct = 50
+			}
+			if progressFn != nil {
+				progressFn(pct, "remote upload in progress")
+			}
+
+		default:
+			return nil, fmt.Errorf("remote upload failed: status=%s", s.Response.Status)
+		}
+
+		time.Sleep(2 * time.Second)
+	}
 }
 
 func (p *RapidGator) getToken(ctx context.Context, opts map[string]string) (string, error) {
